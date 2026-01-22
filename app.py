@@ -1,56 +1,72 @@
+import os
 import streamlit as st
-from langchain_groq import ChatGroq
-from langchain_community.vectorstores import Pinecone
+from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 
-# 1. UI Setup
-st.set_page_config(page_title="Gita AI", page_icon="🙏")
-st.title("🙏 Bhagavad Gita AI Expert")
+# 1. Verification Logic
+# Ensure the index name matches exactly what you used in ingest.py
+INDEX_NAME = "gita-index"
 
-# 2. Memory & Brain Initialization
-# We use a free, lightweight embedding model from HuggingFace
+# 2. Setup Embeddings
+# CRITICAL: This must be the EXACT same model used in ingest.py
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-vectorstore = Pinecone.from_existing_index("gita-index", embeddings)
 
-# Use Groq for lightning-fast, free inference
-llm = ChatGroq(model_name="llama3-70b-8192", temperature=0.2)
+# 3. Connect to the CORRECT existing index
+# We use from_existing_index to ensure we aren't creating a blank slate
+vectorstore = PineconeVectorStore.from_existing_index(
+    index_name=INDEX_NAME, 
+    embedding=embeddings
+)
 
-# 3. The Scholar Prompt (Internal Validation Agent)
-template = """You are a senior Vedic scholar. 
-Answer the user's question ONLY based on the provided Bhagavad Gita excerpts.
+# 4. Setup the LLM (Groq)
+llm = ChatGroq(
+    temperature=0, 
+    model_name="llama3-70b-8192", 
+    groq_api_key=os.getenv("GROQ_API_KEY")
+)
+
+# 5. The Expert Prompt (With Validation)
+template = """You are a Bhagavad Gita scholar. Answer the question using ONLY the context.
+If you don't know, say you don't know.
 
 CONTEXT: {context}
 QUESTION: {question}
 
-INSTRUCTIONS FOR YOUR RESPONSE:
-1. Start with a relevant Sanskrit/English quote from the context.
-2. Provide a clear, compassionate explanation.
-3. If the answer isn't in the context, say: "I apologize, but this specific wisdom is not in my current Gita database."
+YOUR RESPONSE MUST:
+1. Start with the direct verse/quote.
+2. Provide the English explanation.
+3. Cite the Chapter and Verse number found in the context.
 
 ANSWER:"""
 
 PROMPT = PromptTemplate(template=template, input_variables=["context", "question"])
 
-# 4. Retrieval-Augmented Generation (RAG) Chain
+# 6. Build the Chain
 qa_chain = RetrievalQA.from_chain_type(
     llm=llm,
     chain_type="stuff",
-    retriever=vectorstore.as_retriever(search_kwargs={"k": 2}),
+    retriever=vectorstore.as_retriever(search_kwargs={"k": 3}), # Fetches top 3 verses
     return_source_documents=True,
     chain_type_kwargs={"prompt": PROMPT}
 )
 
-# 5. User Interaction
-query = st.text_input("What is your question for the Gita?")
-if query:
-    with st.spinner("Consulting the scriptures..."):
-        result = qa_chain({"query": query})
+# --- Streamlit UI ---
+st.title("🙏 Bhagavad Gita Expert")
+user_query = st.text_input("Ask a question about life or duty:")
+
+if user_query:
+    with st.spinner("Searching the verses..."):
+        response = qa_chain({"query": user_query})
         
-        st.markdown(result["result"])
+        # Display the AI's Answer
+        st.markdown(response["result"])
         
-        # Validation: Explicitly showing the quote used to ground the answer
-        with st.expander("View Source Verses (Validation)"):
-            for doc in result["source_documents"]:
-                st.write(f"📖 {doc.page_content}")
+        # Validation: Show the raw data that backed up the answer
+        with st.expander("Validation: Verses used for this answer"):
+            for doc in response["source_documents"]:
+                # Accessing the metadata we stored in ingest.py
+                st.write(f"**{doc.metadata['chapter']} - Verse {doc.metadata['verse']}**")
+                st.info(doc.page_content)
