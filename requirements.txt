@@ -5,3 +5,6 @@ langchain-huggingface
 pinecone-client
 pandas
 streamlit
+langchain-classic
+langchain-core
+sentence-transformers

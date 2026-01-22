@@ -3,8 +3,8 @@ import streamlit as st
 from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain_classic.chains import RetrievalQA
+from langchain_core.prompts import PromptTemplate
 
 # 1. Verification Logic
 # Ensure the index name matches exactly what you used in ingest.py
@@ -24,7 +24,7 @@ vectorstore = PineconeVectorStore.from_existing_index(
 # 4. Setup the LLM (Groq)
 llm = ChatGroq(
     temperature=0, 
-    model_name="llama3-70b-8192", 
+    model_name="llama-3.3-70b-versatile", 
     groq_api_key=os.getenv("GROQ_API_KEY")
 )
 
